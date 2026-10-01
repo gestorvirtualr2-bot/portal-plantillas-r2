@@ -351,7 +351,7 @@
   // Constantes de dominio — Gestión de Razones
   // ==========================================================
   const SI_NO = ["SI","NO"];
-  const ALIADOS = ["CINCO","INMEL","DOMINION","SICTE"];
+  const ALIADOS = ["CINCO","INMEL","DOMINION","SICTE","CELUSTAR","COMNORTE","GEDIMA","ALZATE ECHEVERRY"];
 
   function fmtFechaAgenda(iso){
     if(!iso) return "";
@@ -435,6 +435,8 @@
       fields: [
         {id:"fechaGestion", label:"Fecha Gestión", type:"date"},
         {id:"horaGestion", label:"Hora Gestión", type:"text", placeholder:"Ej. 10:30 AM"},
+        {id:"aliado", label:"Aliado/Distribuidor", type:"chips", options: ALIADOS, placeholder:"O escribe otro aliado"},
+        {id:"coordenadas", label:"Coordenadas", type:"geo"},
         ...(camposExtra||[]),
         campoSubrazon(letra)
       ]
