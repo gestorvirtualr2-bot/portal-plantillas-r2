@@ -255,6 +255,28 @@
   .geo-maps-link.show{ display:inline-flex; }
   .geo-maps-link:active{ opacity:.7; }
 
+  .btn-evid{
+    width:100%; border:1.5px dashed var(--red); background:var(--red-tint); color:var(--red-deep);
+    border-radius:11px; padding:13px; font-weight:700; font-size:13.5px; cursor:pointer;
+  }
+  .btn-evid:active{ transform:scale(.98); }
+  .evid-box{ display:flex; flex-direction:column; gap:8px; }
+  .evid-list{ display:flex; flex-direction:column; gap:8px; }
+  .evid-item{
+    display:flex; align-items:center; gap:10px; padding:8px; border:1px solid var(--border);
+    border-radius:11px; background:var(--surface-2);
+  }
+  .evid-item img{ width:46px; height:46px; object-fit:cover; border-radius:8px; flex:none; }
+  .evid-item .evid-info{ flex:1; min-width:0; display:flex; flex-direction:column; font-size:12px; }
+  .evid-item .evid-info small{ color:var(--text-dim); font-size:10.5px; }
+  .evid-item.ok .evid-info small{ color:var(--ok); }
+  .evid-item.error .evid-info small{ color:var(--red); }
+  .evid-item button{
+    width:32px; height:32px; flex:none; border:1px solid var(--border); border-radius:9px;
+    background:var(--surface); color:var(--text-dim); cursor:pointer; font-size:14px;
+  }
+  .evid-off{ font-size:11.5px; color:var(--text-dim); background:var(--surface); border:1px dashed var(--border); border-radius:11px; padding:10px 12px; }
+
   .chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:2px; }
   .chip{
     border:1px solid var(--border); background:var(--surface); color:var(--text-dim);
@@ -353,6 +375,15 @@
   const SI_NO = ["SI","NO"];
   const ALIADOS = ["CINCO","INMEL","DOMINION","SICTE","CELUSTAR","COMNORTE","GEDIMA","ALZATE ECHEVERRY"];
 
+  // ==========================================================
+  // Evidencias fotográficas -> carpeta de Google Drive (vía Apps Script)
+  // Pegar aquí la URL de la implementación web (termina en /exec).
+  // ==========================================================
+  const EVID_URL = "https://script.google.com/macros/s/AKfycbzoMALKfEK6MX0mLM9B1rpiwlVfoz6PXCo8ZFIMT3ESaCdz_M4NJycC6AR7l0Q5ITm-DA/exec";
+  const EVID_CLAVE = "w4Yq6oN4loLrXsBVAgw5W0Ih";
+  const EVID_CONFIGURADO = !!(EVID_URL && EVID_CLAVE);
+  const EVID_MAX = 2;
+
   function fmtFechaAgenda(iso){
     if(!iso) return "";
     const p = iso.split("-");
@@ -435,6 +466,8 @@
       fields: [
         {id:"fechaGestion", label:"Fecha Gestión", type:"date"},
         {id:"horaGestion", label:"Hora Gestión", type:"text", placeholder:"Ej. 10:30 AM"},
+        {id:"ordenTrabajo", label:"Orden de Trabajo", type:"text", placeholder:"Ej. 1-ABC123456", case:"upper"},
+        {id:"cuenta", label:"Cuenta", type:"text", inputmode:"numeric", placeholder:"Solo números"},
         {id:"aliado", label:"Aliado/Distribuidor", type:"chips", options: ALIADOS, placeholder:"O escribe otro aliado"},
         {id:"coordenadas", label:"Coordenadas", type:"geo"},
         ...(camposExtra||[]),
@@ -474,6 +507,15 @@
     };
   }
 
+  function grupoEvidencias(){
+    return {
+      title:"📷 Evidencias",
+      fields:[
+        {id:"evidencias", label:"Fotos de evidencia (mínimo 1, máximo 2)", type:"evidencias"}
+      ]
+    };
+  }
+
   function genericBuild(tpl){
     return function(v, meta){
       let out = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔴 ${tpl.label.toUpperCase()} — CLARO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📅 Fecha Registro: ${meta.fecha}\n`;
@@ -482,6 +524,13 @@
         g.fields.forEach(f=>{
           const raw = v[f.id];
           const vacio = raw === undefined || raw === null || raw === "";
+          if(f.type === "evidencias"){
+            if(!EVID_CONFIGURADO) return;
+            if(!vacio){
+              lineas.push(`• ${f.label.replace(/\s*\(.*\)\s*$/,"")}:\n` + raw.split("\n").map((u,i)=>`   ${i+1}. ${u}`).join("\n"));
+              return;
+            }
+          }
           if(f.optional && vacio) return;
           const val = vacio ? "-" : (f.id === "fechaGestion" ? fmtFechaAgenda(raw) : raw);
           lineas.push(`• ${f.label}: ${val}`);
@@ -559,8 +608,11 @@
           {id:"numeroSupervisor", label:"Número supervisor", type:"text"},
           {id:"direccionRedCercana", label:"Dirección red más cercana", type:"text"},
           {id:"valorDispositivo", label:"Valor del dispositivo", type:"text"},
-          {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"},
-          {id:"interventorAvala", label:"Interventor que avala", type:"text"}
+          {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"}
+        ]},
+        { title:"🧭 Zone Owner (ZO) / Interventor", fields:[
+          {id:"nombreZO", label:"Zone Owner (ZO) / Interventor que avala", type:"text", placeholder:"Nombre del ZO"},
+          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO) / Interventor", type:"tel", placeholder:"Ej. 3001234567"}
         ]},
         grupoContacto()
       ]
@@ -614,8 +666,11 @@
           {id:"numeroSupervisor", label:"Número supervisor", type:"text"},
           {id:"direccionRedCercana", label:"Dirección red más cercana", type:"text"},
           {id:"valorDispositivo", label:"Valor del dispositivo", type:"text"},
-          {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"},
-          {id:"interventorAvala", label:"Interventor que avala", type:"text"}
+          {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"}
+        ]},
+        { title:"🧭 Zone Owner (ZO) / Interventor", fields:[
+          {id:"nombreZO", label:"Zone Owner (ZO) / Interventor que avala", type:"text", placeholder:"Nombre del ZO"},
+          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO) / Interventor", type:"tel", placeholder:"Ej. 3001234567"}
         ]},
         grupoContacto()
       ]
@@ -788,6 +843,7 @@
     }
   };
 
+  Object.values(TEMPLATES).forEach(t=>t.groups.push(grupoEvidencias()));
   Object.values(TEMPLATES).forEach(t=>{ if(!t.build) t.build = genericBuild(t); });
   Object.values(TEMPLATES).forEach(t=>t.groups.forEach(g=>g.fields.forEach(f=>{
     const tip = inferTipado(f);
@@ -930,6 +986,16 @@
           ${f.options.map(o=>`<button type="button" class="chip" data-val="${o}">${o}</button>`).join("")}
         </div>
         <input id="c-${f.id}" type="text" placeholder="${f.placeholder || "O escribe otro"}" autocomplete="off">`;
+    }else if(f.type === "evidencias"){
+      control = EVID_CONFIGURADO ? `
+        <div class="evid-box">
+          <button type="button" class="btn-evid" id="evid-btn-${f.id}">📷 Agregar evidencia</button>
+          <input type="file" id="evid-file-${f.id}" accept="image/*" capture="environment" multiple hidden>
+          <div class="evid-list" id="evid-list-${f.id}"></div>
+        </div>
+        <textarea id="c-${f.id}" hidden></textarea>` : `
+        <div class="evid-off">⚠️ Evidencias sin configurar: falta conectar la carpeta de Drive.</div>
+        <textarea id="c-${f.id}" hidden></textarea>`;
     }else if(f.type === "geo"){
       control = `
         <div class="coord-wrapper">
@@ -997,6 +1063,122 @@
     );
   }
 
+  // ---------- Evidencias ----------
+  let evidItems = [];
+  const evidPendientes = ()=> evidItems.some(i=>i.estado === "subiendo");
+
+  function comprimirImagen(file, maxLado, calidad){
+    return new Promise((resolve, reject)=>{
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = ()=>{
+        const esc = Math.min(1, maxLado / Math.max(img.width, img.height));
+        const w = Math.round(img.width * esc), h = Math.round(img.height * esc);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        c.toBlob(b=> b ? resolve(b) : reject(new Error("No se pudo procesar la foto")), "image/jpeg", calidad);
+      };
+      img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error("Foto no válida")); };
+      img.src = url;
+    });
+  }
+
+  function blobABase64(blob){
+    return new Promise((resolve, reject)=>{
+      const r = new FileReader();
+      r.onload = ()=>resolve(String(r.result).split(",")[1]);
+      r.onerror = ()=>reject(r.error);
+      r.readAsDataURL(blob);
+    });
+  }
+
+  async function subirEvidencia(blob, nombre, carpeta){
+    const data = await blobABase64(blob);
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 90000);
+    try{
+      const resp = await fetch(EVID_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"text/plain;charset=utf-8" },
+        body: JSON.stringify({ clave:EVID_CLAVE, nombre, carpeta, data }),
+        signal: ctrl.signal
+      });
+      const j = await resp.json();
+      if(!j.ok) throw new Error(j.error || "No se pudo guardar");
+      return j.url;
+    }finally{ clearTimeout(t); }
+  }
+
+  function initEvidencias(f){
+    if(!EVID_CONFIGURADO) return;
+    const btn = $(`evid-btn-${f.id}`), file = $(`evid-file-${f.id}`), list = $(`evid-list-${f.id}`), out = $(`c-${f.id}`);
+    let seq = 0;
+    evidItems = [];
+
+    function render(){
+      list.innerHTML = evidItems.map(it=>`
+        <div class="evid-item ${it.estado}">
+          <img src="${it.thumb}" alt="">
+          <div class="evid-info"><b>Foto ${it.n}</b><small>${it.estado === "subiendo" ? "Subiendo…" : it.estado === "ok" ? "Guardada en Drive ✓" : "No se subió: " + it.error}</small></div>
+          ${it.estado === "error" ? `<button type="button" data-act="retry" data-id="${it.id}" aria-label="Reintentar">↻</button>` : ""}
+          <button type="button" data-act="del" data-id="${it.id}" aria-label="Quitar">✕</button>
+        </div>`).join("");
+      out.value = evidItems.filter(i=>i.estado === "ok").map(i=>i.url).join("\n");
+      const lleno = evidItems.length >= EVID_MAX;
+      btn.disabled = lleno;
+      btn.textContent = lleno ? `📷 Límite alcanzado (${EVID_MAX} fotos)` : "📷 Agregar evidencia";
+      if(out.value) $(`field-${f.id}`).classList.remove("field-error");
+      actualizarPreview();
+    }
+
+    async function subir(it){
+      it.estado = "subiendo"; render();
+      try{
+        it.url = await subirEvidencia(it.blob, it.nombre, it.carpeta);
+        it.estado = "ok";
+      }catch(e){
+        it.estado = "error";
+        it.error = e && e.name === "AbortError" ? "tiempo agotado" : "revisa tu conexión";
+      }
+      render();
+    }
+
+    btn.addEventListener("click", ()=>file.click());
+    file.addEventListener("change", async ()=>{
+      let fotos = [...file.files]; file.value = "";
+      const cupo = EVID_MAX - evidItems.length;
+      if(fotos.length > cupo){
+        alert(`Máximo ${EVID_MAX} fotos por plantilla.`);
+        fotos = fotos.slice(0, Math.max(cupo, 0));
+      }
+      for(const fl of fotos){
+        const fecha = ($("c-fechaGestion") && $("c-fechaGestion").value) || fechaHoyISO();
+        const otRaw = ($("c-ordenTrabajo") && $("c-ordenTrabajo").value) || "";
+        const ot = otRaw.replace(/[^A-Za-z0-9-]/g, "") || "SIN-OT";
+        const n = ++seq;
+        try{
+          const blob = await comprimirImagen(fl, 1280, 0.72);
+          const it = { id:n, n, blob, thumb:URL.createObjectURL(blob), estado:"subiendo", url:"", error:"",
+                       nombre:`${fecha}_${ot}_${plantillaActual.id}_${n}.jpg`, carpeta:fecha };
+          evidItems.push(it);
+          subir(it);
+        }catch(e){
+          alert("No se pudo procesar la foto. Intenta de nuevo.");
+        }
+      }
+    });
+    list.addEventListener("click", (ev)=>{
+      const b = ev.target.closest("button[data-act]");
+      if(!b) return;
+      const it = evidItems.find(x=>x.id === Number(b.dataset.id));
+      if(!it) return;
+      if(b.dataset.act === "del"){ evidItems = evidItems.filter(x=>x !== it); render(); }
+      else if(b.dataset.act === "retry"){ subir(it); }
+    });
+  }
+
   function abrirFormulario(tplId){
     plantillaActual = TEMPLATES[tplId];
     valores = {};
@@ -1059,6 +1241,11 @@
         btn.addEventListener("click", ()=>pedirUbicacion(f));
         pedirUbicacion(f);
       }
+    }));
+
+    // evidencias
+    plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
+      if(f.type === "evidencias") initEvidencias(f);
     }));
 
     // condicionales
@@ -1133,6 +1320,7 @@
         wrapper.classList.remove("field-error");
         return;
       }
+      if(f.type === "evidencias" && !EVID_CONFIGURADO) return;
       const el = $(`c-${f.id}`);
       const val = el ? el.value.trim() : "";
       if(!val){
@@ -1166,6 +1354,11 @@
   }
 
   async function onCopiar(){
+    if(evidPendientes()){
+      $("copy-label").textContent = "Espera: aún se están subiendo las fotos";
+      setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
+      return;
+    }
     if(!validarCampos()){
       $("copy-label").textContent = "Completa los campos resaltados en rojo";
       setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
@@ -1195,6 +1388,7 @@
 
 })();
 </script>
+
 
 </body>
 </html>
