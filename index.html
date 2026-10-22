@@ -295,6 +295,11 @@
     position:sticky; bottom:calc(10px + env(safe-area-inset-bottom,0px));
   }
   .btn-copy:active{ transform:scale(.98); }
+  .post-copy{ display:flex; gap:8px; margin-top:10px; }
+  .post-copy button{ flex:1; padding:12px 8px; border-radius:12px; font-weight:700; font-size:13.5px; cursor:pointer; border:1.5px solid var(--red); background:transparent; color:var(--red); }
+  .post-copy .btn-nuevo{ background:var(--red); color:#fff; }
+  .post-copy button:active{ transform:scale(.97); }
+  input.auto-ro{ opacity:.75; pointer-events:none; }
   .btn-copy.copied{ background:var(--ok); }
 
   .voice-toggle{
@@ -515,7 +520,7 @@
 
   function genericBuild(tpl){
     return function(v, meta){
-      let out = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔴 ${tpl.label.toUpperCase()} — CLARO\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📅 Fecha Registro: ${meta.fecha}\n`;
+      let out = `🔴 ${tpl.label.toUpperCase()} — CLARO\n📅 Fecha Registro: ${meta.fecha}\n`;
       tpl.groups.forEach(g=>{
         const lineas = [];
         g.fields.forEach(f=>{
@@ -540,7 +545,6 @@
         if(!lineas.length) return;
         out += `\n${g.title}\n${lineas.join("\n")}\n`;
       });
-      out += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
       return out;
     };
   }
@@ -1206,7 +1210,7 @@
         const codigo = `${plantillaActual.id}-${ot}-F${n}`;
         const marca = [
           `${codigo}`,
-          `${plantillaActual.label} · OT ${ot}`,
+          `${plantillaActual.label} · ${ot}`,
           `Téc: ${val("tecnico") || "-"} · ${fecha} ${val("horaGestion")}`.trim(),
           `GPS: ${val("coordenadas") || "sin coordenadas"}`
         ];
@@ -1244,7 +1248,11 @@
     html += `
       <p class="section-label">Vista previa</p>
       <div class="preview-box" id="preview"></div>
-      <button class="btn-copy" id="btn-copy"><span id="copy-icon">📋</span><span id="copy-label">Copiar plantilla</span></button>`;
+      <button class="btn-copy" id="btn-copy"><span id="copy-icon">📋</span><span id="copy-label">Copiar plantilla</span></button>
+      <div class="post-copy" id="post-copy" hidden>
+        <button type="button" class="btn-nuevo" id="btn-nuevo">➕ Nuevo registro</button>
+        <button type="button" class="btn-otra" id="btn-otra">📑 Otra plantilla</button>
+      </div>`;
     body.innerHTML = html;
 
     // precargar técnico recordado
@@ -1340,6 +1348,13 @@
       }
     }));
     $("btn-copy").addEventListener("click", onCopiar);
+    $("btn-nuevo").addEventListener("click", ()=>{
+      abrirFormulario(plantillaActual.id);
+      const sc = $("screen-form"); if(sc && sc.scrollTo) sc.scrollTo(0,0); window.scrollTo(0,0);
+    });
+    $("btn-otra").addEventListener("click", ()=>{ screenForm.hidden = true; screenPanel.hidden = false; window.scrollTo(0,0); });
+    // fecha y hora de gestión: automáticas, no editables
+    ["fechaGestion","horaGestion"].forEach(id=>{ const el = $(`c-${id}`); if(el){ el.readOnly = true; el.classList.add("auto-ro"); } });
 
     actualizarPreview();
 
@@ -1468,6 +1483,7 @@
         if(f.remember && valores[f.id]) guardarPref(f.id, valores[f.id]);
       }));
       btn.classList.add("copied");
+      $("post-copy").hidden = false;
       $("copy-icon").textContent = "✅";
       $("copy-label").textContent = "Copiado";
       setTimeout(()=>{
