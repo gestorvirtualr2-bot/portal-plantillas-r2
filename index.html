@@ -1,11 +1,4 @@
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-</head>
-<body>
-<title>Portal de Plantillas Regional 2</title>
+<!doctype html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body><title>Portal de Plantillas Regional 2</title>
 <meta name="description" content="Diligencia y copia las 25 plantillas de Gestión de Razones (Cliente no atiende, Lluvia, Fuera de zona, Zona roja, Reporte al NOC y más) — intro animada y saludo por voz para técnicos de campo.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#e4002b">
@@ -254,6 +247,9 @@
   }
   .geo-maps-link.show{ display:inline-flex; }
   .geo-maps-link:active{ opacity:.7; }
+  .geo-go{ display:none; align-items:center; justify-content:center; gap:6px; margin-top:4px; padding:9px 12px; border-radius:10px; background:var(--red); color:#fff; font-size:13px; font-weight:700; text-decoration:none; }
+  .geo-go.show{ display:inline-flex; }
+  .geo-go:active{ opacity:.8; }
 
   .btn-evid{
     width:100%; border:1.5px dashed var(--red); background:var(--red-tint); color:var(--red-deep);
@@ -460,13 +456,14 @@
     };
   }
 
-  function grupoGestion(letra, camposExtra){
+  function grupoGestion(letra, camposExtra, trasOrden){
     return {
       title:"📌 Datos de Gestión",
       fields: [
         {id:"fechaGestion", label:"Fecha Gestión", type:"date"},
         {id:"horaGestion", label:"Hora Gestión", type:"text", placeholder:"Ej. 10:30 AM"},
         {id:"ordenTrabajo", label:"Orden de Trabajo", type:"text", placeholder:"Ej. 1-ABC123456", case:"upper"},
+        ...(trasOrden||[]),
         {id:"cuenta", label:"Cuenta", type:"text", inputmode:"numeric", placeholder:"Solo números"},
         {id:"aliado", label:"Aliado/Distribuidor", type:"chips", options: ALIADOS, placeholder:"O escribe otro aliado"},
         {id:"coordenadas", label:"Coordenadas", type:"geo"},
@@ -527,11 +524,16 @@
           if(f.type === "evidencias"){
             if(!EVID_CONFIGURADO) return;
             if(!vacio){
-              lineas.push(`• ${f.label.replace(/\s*\(.*\)\s*$/,"")}:\n` + raw.split("\n").map((u,i)=>`   ${i+1}. ${u}`).join("\n"));
+              lineas.push(`• ${f.label.replace(/\s*\(.*\)\s*$/,"")}:\n` + raw.split("\n").map(u=>{const k=u.indexOf(": ");return k>0?`   ▫️ ${u.slice(0,k)}\n   ${u.slice(k+2)}`:`   ${u}`;}).join("\n"));
               return;
             }
           }
-          if(f.optional && vacio) return;
+          if(f.type === "geo" && !vacio){
+            const mp = enlaceMapas(raw);
+            lineas.push(`• ${f.label}: ${raw}` + (mp ? `\n   🧭 Ir al sitio: ${mp}` : ""));
+            return;
+          }
+          if((f.optional || f.condOn) && vacio) return;
           const val = vacio ? "-" : (f.id === "fechaGestion" ? fmtFechaAgenda(raw) : raw);
           lineas.push(`• ${f.label}: ${val}`);
         });
@@ -660,7 +662,10 @@
       voiceLabel:"Plantilla de fuera de zona o sin cobertura de red",
       groups:[
         grupoTecnico(),
-        grupoGestion("Z"),
+        grupoGestion("Z", [], [
+          {id:"red", label:"Red", type:"select", options:["FTTH","HFC","FWA","DTH"]},
+          {id:"redVisible", label:"¿Qué tipo de red ve con cobertura visualmente?", type:"select", options:["FTTH","HFC","FWA","DTH","No hay red con cobertura visible"], condOn:"red", condAny:true}
+        ]),
         { title:"🗺️ Datos de Red", fields:[
           {id:"supervisorAvala", label:"Supervisor que avala", type:"text"},
           {id:"numeroSupervisor", label:"Número supervisor", type:"text"},
@@ -1003,12 +1008,13 @@
           <button type="button" class="btn-geo" id="geo-${f.id}" aria-label="Actualizar coordenadas">📍</button>
         </div>
         <span class="geo-status" id="geo-status-${f.id}"></span>
+        <a target="_blank" rel="noopener" class="geo-go" id="geo-go-${f.id}" data-for="c-${f.id}">🧭 Ir al sitio (Google Maps)</a>
         <a href="https://www.google.com/maps/@?api=1&map_action=map&zoom=18" target="_blank" rel="noopener" class="geo-maps-link" id="geo-maps-${f.id}">🗺️ Abrir Maps, copiar mi ubicación y pegarla aquí</a>`;
     }else{
       control = `<input id="c-${f.id}" type="${f.type}" inputmode="${f.inputmode||""}" placeholder="${f.placeholder||""}" autocomplete="off">`;
     }
     const hint = f.hint ? `<span class="hint">${f.hint}</span>` : "";
-    return `<div class="field" id="field-${f.id}" ${f.condOn ? `data-cond-on="${f.condOn}" data-cond-val="${f.condVal}"` : ""}>
+    return `<div class="field" id="field-${f.id}" ${f.condOn ? `data-cond-on="${f.condOn}" data-cond-val="${f.condVal}" ${f.condAny ? 'data-cond-any' : ""}` : ""}>
       <label for="c-${f.id}">${f.label}</label>
       ${control}
       ${hint}
@@ -1067,7 +1073,26 @@
   let evidItems = [];
   const evidPendientes = ()=> evidItems.some(i=>i.estado === "subiendo");
 
-  function comprimirImagen(file, maxLado, calidad){
+  function dibujarMarca(ctx, w, h, lineas){
+    const fs = Math.max(13, Math.round(w / 38));
+    const pad = Math.round(fs * 0.6), lh = Math.round(fs * 1.3);
+    const alto = lineas.length * lh + pad * 2;
+    ctx.fillStyle = "rgba(0,0,0,0.62)";
+    ctx.fillRect(0, h - alto, w, alto);
+    ctx.textBaseline = "top";
+    lineas.forEach((t, i)=>{
+      ctx.font = `${i === 0 ? "bold " : ""}${fs}px Arial, sans-serif`;
+      ctx.fillStyle = i === 0 ? "#ffd54f" : "#ffffff";
+      let txt = String(t);
+      if(ctx.measureText){
+        while(txt.length > 4 && ctx.measureText(txt).width > w - pad * 2) txt = txt.slice(0, -2);
+        if(txt.length < String(t).length) txt += "…";
+      }
+      ctx.fillText(txt, pad, h - alto + pad + i * lh);
+    });
+  }
+
+  function comprimirImagen(file, maxLado, calidad, marca){
     return new Promise((resolve, reject)=>{
       const url = URL.createObjectURL(file);
       const img = new Image();
@@ -1076,7 +1101,9 @@
         const w = Math.round(img.width * esc), h = Math.round(img.height * esc);
         const c = document.createElement("canvas");
         c.width = w; c.height = h;
-        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        if(marca && marca.length) dibujarMarca(ctx, w, h, marca);
         URL.revokeObjectURL(url);
         c.toBlob(b=> b ? resolve(b) : reject(new Error("No se pudo procesar la foto")), "image/jpeg", calidad);
       };
@@ -1107,7 +1134,7 @@
       });
       const j = await resp.json();
       if(!j.ok) throw new Error(j.error || "No se pudo guardar");
-      return j.url;
+      return j.corta || j.url;
     }finally{ clearTimeout(t); }
   }
 
@@ -1121,11 +1148,11 @@
       list.innerHTML = evidItems.map(it=>`
         <div class="evid-item ${it.estado}">
           <img src="${it.thumb}" alt="">
-          <div class="evid-info"><b>Foto ${it.n}</b><small>${it.estado === "subiendo" ? "Subiendo…" : it.estado === "ok" ? "Guardada en Drive ✓" : "No se subió: " + it.error}</small></div>
+          <div class="evid-info"><b>${it.codigo}</b><small>${it.estado === "subiendo" ? "Subiendo…" : it.estado === "ok" ? "Guardada en Drive ✓" : "No se subió: " + it.error}</small></div>
           ${it.estado === "error" ? `<button type="button" data-act="retry" data-id="${it.id}" aria-label="Reintentar">↻</button>` : ""}
           <button type="button" data-act="del" data-id="${it.id}" aria-label="Quitar">✕</button>
         </div>`).join("");
-      out.value = evidItems.filter(i=>i.estado === "ok").map(i=>i.url).join("\n");
+      out.value = evidItems.filter(i=>i.estado === "ok").map(i=>`${i.codigo}: ${i.url}`).join("\n");
       const lleno = evidItems.length >= EVID_MAX;
       btn.disabled = lleno;
       btn.textContent = lleno ? `📷 Límite alcanzado (${EVID_MAX} fotos)` : "📷 Agregar evidencia";
@@ -1154,14 +1181,21 @@
         fotos = fotos.slice(0, Math.max(cupo, 0));
       }
       for(const fl of fotos){
-        const fecha = ($("c-fechaGestion") && $("c-fechaGestion").value) || fechaHoyISO();
-        const otRaw = ($("c-ordenTrabajo") && $("c-ordenTrabajo").value) || "";
-        const ot = otRaw.replace(/[^A-Za-z0-9-]/g, "") || "SIN-OT";
+        const val = id=>($(`c-${id}`) && $(`c-${id}`).value || "").trim();
+        const fecha = val("fechaGestion") || fechaHoyISO();
+        const ot = val("ordenTrabajo").replace(/[^A-Za-z0-9-]/g, "") || "SIN-OT";
         const n = ++seq;
+        const codigo = `${plantillaActual.id}-${ot}-F${n}`;
+        const marca = [
+          `${codigo}`,
+          `${plantillaActual.label} · OT ${ot}`,
+          `Téc: ${val("tecnico") || "-"} · ${fecha} ${val("horaGestion")}`.trim(),
+          `GPS: ${val("coordenadas") || "sin coordenadas"}`
+        ];
         try{
-          const blob = await comprimirImagen(fl, 1280, 0.72);
-          const it = { id:n, n, blob, thumb:URL.createObjectURL(blob), estado:"subiendo", url:"", error:"",
-                       nombre:`${fecha}_${ot}_${plantillaActual.id}_${n}.jpg`, carpeta:fecha };
+          const blob = await comprimirImagen(fl, 1280, 0.72, marca);
+          const it = { id:n, n, codigo, blob, thumb:URL.createObjectURL(blob), estado:"subiendo", url:"", error:"",
+                       nombre:`${codigo}_${fecha}.jpg`, carpeta:fecha };
           evidItems.push(it);
           subir(it);
         }catch(e){
@@ -1254,7 +1288,7 @@
         const master = $(`c-${f.condOn}`);
         const target = $(`field-${f.id}`);
         function sync(){
-          const visible = master.value === f.condVal;
+          const visible = f.condAny ? master.value !== "" : master.value === f.condVal;
           target.toggleAttribute("data-cond-hidden", !visible);
         }
         master.addEventListener("change", sync);
@@ -1302,7 +1336,19 @@
     return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
+  function enlaceMapas(txt){
+    const m = /(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)/.exec(String(txt||""));
+    if(!m) return "";
+    const lat = parseFloat(m[1]), lon = parseFloat(m[2]);
+    if(Math.abs(lat) > 90 || Math.abs(lon) > 180) return "";
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  }
+
   function actualizarPreview(){
+    document.querySelectorAll(".geo-go").forEach(a=>{
+      const inp = $(a.dataset.for), url = enlaceMapas(inp && inp.value);
+      if(url){ a.href = url; a.classList.add("show"); } else { a.removeAttribute("href"); a.classList.remove("show"); }
+    });
     valores = recolectarValores();
     const meta = { fecha: fechaRegistroActual() };
     const texto = plantillaActual.build(valores, meta);
@@ -1389,6 +1435,4 @@
 })();
 </script>
 
-
-</body>
-</html>
+</body></html>
