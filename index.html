@@ -247,7 +247,7 @@
   }
   .geo-maps-link.show{ display:inline-flex; }
   .geo-maps-link:active{ opacity:.7; }
-  .geo-go{ display:none; align-items:center; justify-content:center; gap:6px; margin-top:4px; padding:9px 12px; border-radius:10px; background:var(--red); color:#fff; font-size:13px; font-weight:700; text-decoration:none; }
+  .geo-go-unused{ display:none; align-items:center; justify-content:center; gap:6px; margin-top:4px; padding:9px 12px; border-radius:10px; background:var(--red); color:#fff; font-size:13px; font-weight:700; text-decoration:none; }
   .geo-go.show{ display:inline-flex; }
   .geo-go:active{ opacity:.8; }
 
@@ -462,7 +462,7 @@
       fields: [
         {id:"fechaGestion", label:"Fecha Gestión", type:"date"},
         {id:"horaGestion", label:"Hora Gestión", type:"text", placeholder:"Ej. 10:30 AM"},
-        {id:"ordenTrabajo", label:"Orden de Trabajo", type:"text", placeholder:"Ej. 1-ABC123456", case:"upper"},
+        {id:"ordenTrabajo", label:"Orden de Trabajo", type:"text", inputmode:"numeric", placeholder:"Solo números (el OT se agrega solo)", ot:true},
         ...(trasOrden||[]),
         {id:"cuenta", label:"Cuenta", type:"text", inputmode:"numeric", placeholder:"Solo números"},
         {id:"aliado", label:"Aliado/Distribuidor", type:"chips", options: ALIADOS, placeholder:"O escribe otro aliado"},
@@ -530,7 +530,7 @@
           }
           if(f.type === "geo" && !vacio){
             const mp = enlaceMapas(raw);
-            lineas.push(`• ${f.label}: ${raw}` + (mp ? `\n   🧭 Ir al sitio: ${mp}` : ""));
+            lineas.push(`• ${f.label}: ${raw}` + (mp ? `\n   🧭 Ir al sitio: ${cortos[mp] || mp}` : ""));
             return;
           }
           if((f.optional || f.condOn) && vacio) return;
@@ -612,9 +612,9 @@
           {id:"valorDispositivo", label:"Valor del dispositivo", type:"text"},
           {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"}
         ]},
-        { title:"🧭 Zone Owner (ZO) / Interventor", fields:[
-          {id:"nombreZO", label:"Zone Owner (ZO) / Interventor que avala", type:"text", placeholder:"Nombre del ZO"},
-          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO) / Interventor", type:"tel", placeholder:"Ej. 3001234567"}
+        { title:"🧭 Zone Owner (ZO)", fields:[
+          {id:"nombreZO", label:"Zone Owner (ZO) que avala", type:"text", placeholder:"Nombre del ZO"},
+          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO)", type:"tel", placeholder:"Ej. 3001234567"}
         ]},
         grupoContacto()
       ]
@@ -673,9 +673,9 @@
           {id:"valorDispositivo", label:"Valor del dispositivo", type:"text"},
           {id:"distanciaUltimoPunto", label:"Distancia del último punto de cobertura", type:"text"}
         ]},
-        { title:"🧭 Zone Owner (ZO) / Interventor", fields:[
-          {id:"nombreZO", label:"Zone Owner (ZO) / Interventor que avala", type:"text", placeholder:"Nombre del ZO"},
-          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO) / Interventor", type:"tel", placeholder:"Ej. 3001234567"}
+        { title:"🧭 Zone Owner (ZO)", fields:[
+          {id:"nombreZO", label:"Zone Owner (ZO) que avala", type:"text", placeholder:"Nombre del ZO"},
+          {id:"telefonoZO", label:"Teléfono Zone Owner (ZO)", type:"tel", placeholder:"Ej. 3001234567"}
         ]},
         grupoContacto()
       ]
@@ -938,10 +938,16 @@
   // La voz de bienvenida suena al tocar "Toca para ingresar" — ese toque
   // es el gesto que los navegadores móviles exigen para permitir audio,
   // así que es el punto más confiable para dispararla.
-  const textoSaludoInicial = () => `${saludoPorHora()}, bienvenido al portal de plantillas Claro Colombia, Regional 2.`;
-  $("panel-greeting").textContent = saludoPorHora();
+  function nombrePila(){
+    const n = (leerPref("tecnico") || "").trim().split(/\s+/)[0] || "";
+    return n ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : "";
+  }
+  const saludoNombre = () => { const n = nombrePila(); return n ? `${saludoPorHora()}, ${n}` : saludoPorHora(); };
+  const textoSaludoInicial = () => `${saludoNombre()}, bienvenido al portal de plantillas Claro Colombia, Regional 2.`;
+  $("panel-greeting").textContent = saludoNombre();
 
   $("btn-enter").addEventListener("click", ()=>{
+    $("panel-greeting").textContent = saludoNombre();
     screenIntro.hidden = true;
     screenPanel.hidden = false;
     hablar(textoSaludoInicial());
@@ -1004,12 +1010,10 @@
     }else if(f.type === "geo"){
       control = `
         <div class="coord-wrapper">
-          <input id="c-${f.id}" type="text" placeholder="Obteniendo ubicación…" autocomplete="off">
+          <input id="c-${f.id}" type="text" placeholder="Obteniendo ubicación…" autocomplete="off" readonly>
           <button type="button" class="btn-geo" id="geo-${f.id}" aria-label="Actualizar coordenadas">📍</button>
         </div>
-        <span class="geo-status" id="geo-status-${f.id}"></span>
-        <a target="_blank" rel="noopener" class="geo-go" id="geo-go-${f.id}" data-for="c-${f.id}">🧭 Ir al sitio (Google Maps)</a>
-        <a href="https://www.google.com/maps/@?api=1&map_action=map&zoom=18" target="_blank" rel="noopener" class="geo-maps-link" id="geo-maps-${f.id}">🗺️ Abrir Maps, copiar mi ubicación y pegarla aquí</a>`;
+        <span class="geo-status" id="geo-status-${f.id}"></span>`;
     }else{
       control = `<input id="c-${f.id}" type="${f.type}" inputmode="${f.inputmode||""}" placeholder="${f.placeholder||""}" autocomplete="off">`;
     }
@@ -1029,13 +1033,13 @@
     const mapsLink = $(`geo-maps-${f.id}`);
     if(!btn || !input || !status) return;
     if(!("geolocation" in navigator)){
-      status.textContent = "Este navegador no soporta ubicación automática. Usa el enlace de Maps o escríbela manualmente.";
+      status.textContent = "Este navegador no soporta ubicación automática. Reintenta con 📍.";
       status.className = "geo-status err";
       mapsLink && mapsLink.classList.add("show");
       return;
     }
     if(location.protocol === "file:"){
-      status.textContent = "La ubicación automática solo funciona abriendo el enlace del portal. Usa el enlace de Maps o escríbela manualmente.";
+      status.textContent = "La ubicación automática solo funciona abriendo el enlace del portal. Reintenta con 📍.";
       status.className = "geo-status err";
       mapsLink && mapsLink.classList.add("show");
       return;
@@ -1056,10 +1060,10 @@
         actualizarPreview();
       },
       (err)=>{
-        let msg = "No se pudo obtener la ubicación. Usa el enlace de Maps de abajo o escríbela manualmente.";
-        if(err.code === 1) msg = (location.protocol === "file:" ? "La ubicación automática solo funciona abriendo el enlace del portal." : "Este portal no tiene permiso para leer tu ubicación aquí.") + " Toca '🗺️ Abrir Maps' abajo: ahí sí puedes ver tu ubicación, cópiala y pégala en el campo.";
-        else if(err.code === 2) msg = "Ubicación no disponible en este momento. Usa el enlace de Maps o reintenta con 📍.";
-        else if(err.code === 3) msg = "Se agotó el tiempo esperando el GPS. Reintenta con 📍 o usa el enlace de Maps.";
+        let msg = "No se pudo obtener la ubicación. Reintenta con 📍.";
+        if(err.code === 1) msg = (location.protocol === "file:" ? "La ubicación automática solo funciona abriendo el enlace del portal." : "Este portal no tiene permiso para leer tu ubicación aquí.") + " Revisa que el GPS y el permiso de ubicación del navegador estén activos y reintenta con 📍.";
+        else if(err.code === 2) msg = "Ubicación no disponible en este momento. Reintenta con 📍.";
+        else if(err.code === 3) msg = "Se agotó el tiempo esperando el GPS. Reintenta con 📍.";
         status.textContent = msg;
         status.className = "geo-status err";
         btn.classList.remove("loading"); btn.disabled = false;
@@ -1172,7 +1176,21 @@
       render();
     }
 
-    btn.addEventListener("click", ()=>file.click());
+    btn.addEventListener("click", ()=>{
+      const faltan = [];
+      ["ordenTrabajo","tecnico"].forEach(id=>{
+        const el = $(`c-${id}`);
+        if(el && !el.value.trim()){
+          faltan.push(id === "tecnico" ? "Técnico" : "Orden de Trabajo");
+          const fl = $(`field-${id}`); if(fl) fl.classList.add("field-error");
+        }
+      });
+      if(faltan.length){
+        alert("Antes de agregar la evidencia diligencia: " + faltan.join(" y ") + ".");
+        return;
+      }
+      file.click();
+    });
     file.addEventListener("change", async ()=>{
       let fotos = [...file.files]; file.value = "";
       const cupo = EVID_MAX - evidItems.length;
@@ -1183,7 +1201,7 @@
       for(const fl of fotos){
         const val = id=>($(`c-${id}`) && $(`c-${id}`).value || "").trim();
         const fecha = val("fechaGestion") || fechaHoyISO();
-        const ot = val("ordenTrabajo").replace(/[^A-Za-z0-9-]/g, "") || "SIN-OT";
+        const otd = val("ordenTrabajo").replace(/\D/g, ""), ot = otd ? "OT" + otd : "SIN-OT";
         const n = ++seq;
         const codigo = `${plantillaActual.id}-${ot}-F${n}`;
         const marca = [
@@ -1305,6 +1323,15 @@
         actualizarPreview();
       });
       el.addEventListener("change", actualizarPreview);
+      if(f.ot){
+        el.addEventListener("input", ()=>{ el.value = el.value.replace(/\D/g, ""); });
+        el.addEventListener("blur", ()=>{
+          const d = el.value.replace(/\D/g, "");
+          el.value = d ? "OT" + d : "";
+          actualizarPreview();
+        });
+        el.addEventListener("focus", ()=>{ el.value = el.value.replace(/\D/g, ""); });
+      }
       if(f.case){
         el.addEventListener("blur", ()=>{
           el.value = aplicarCaso(el.value, f.case);
@@ -1326,6 +1353,7 @@
     plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
       const el = $(`c-${f.id}`);
       v[f.id] = el ? el.value.trim() : "";
+      if(f.ot && v[f.id]) v[f.id] = "OT" + v[f.id].replace(/\D/g, "");
     }));
     return v;
   }
@@ -1344,11 +1372,32 @@
     return `https://www.google.com/maps?q=${lat},${lon}`;
   }
 
+  const cortos = {}, acortando = {};
+  async function acortarUrl(url){
+    if(!EVID_CONFIGURADO) return url;
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), 15000);
+    try{
+      const r = await fetch(EVID_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" },
+        body: JSON.stringify({ clave:EVID_CLAVE, accion:"acortar", url }), signal: ctrl.signal });
+      const j = await r.json();
+      return (j.ok && j.corta) ? j.corta : url;
+    }catch(e){ return url; }
+    finally{ clearTimeout(t); }
+  }
+  function acortarMapasPendientes(){
+    if(!plantillaActual) return;
+    plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
+      if(f.type !== "geo") return;
+      const el = $(`c-${f.id}`), mp = enlaceMapas(el && el.value);
+      if(!mp || cortos[mp] || acortando[mp]) return;
+      acortando[mp] = true;
+      acortarUrl(mp).then(c=>{ cortos[mp] = c; delete acortando[mp]; actualizarPreview(); });
+    }));
+  }
+
   function actualizarPreview(){
-    document.querySelectorAll(".geo-go").forEach(a=>{
-      const inp = $(a.dataset.for), url = enlaceMapas(inp && inp.value);
-      if(url){ a.href = url; a.classList.add("show"); } else { a.removeAttribute("href"); a.classList.remove("show"); }
-    });
+    acortarMapasPendientes();
     valores = recolectarValores();
     const meta = { fecha: fechaRegistroActual() };
     const texto = plantillaActual.build(valores, meta);
