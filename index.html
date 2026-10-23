@@ -301,6 +301,8 @@
   .post-copy button:active{ transform:scale(.97); }
   input.auto-ro{ opacity:.75; pointer-events:none; }
   .btn-copy.copied{ background:var(--ok); }
+  .btn-ofsc{ margin-top:8px; padding:12px; border-radius:13px; border:1.5px solid var(--red); background:transparent; color:var(--red); font-weight:700; font-size:13.5px; cursor:pointer; }
+  .btn-ofsc:active{ transform:scale(.98); }
 
   .voice-toggle{
     position:fixed; top:calc(14px + env(safe-area-inset-top,0px)); right:14px;
@@ -570,7 +572,9 @@
 
   function genericBuild(tpl){
     return function(v, meta){
+      const of = !!(meta && meta.ofsc);
       let out = `🔴 ${tpl.label.toUpperCase()} — CLARO\n📅 Fecha Registro: ${meta.fecha}\n`;
+      const secciones = [];
       tpl.groups.forEach(g=>{
         const lineas = [];
         g.fields.forEach(f=>{
@@ -593,9 +597,21 @@
           lineas.push(`• ${f.label}: ${val}`);
         });
         if(!lineas.length) return;
-        out += `\n${g.title}\n${lineas.join("\n")}\n`;
+        secciones.push({ title:g.title, lineas });
       });
-      return out;
+      if(!of){
+        secciones.forEach(sc=>{ out += `\n${sc.title}\n${sc.lineas.join("\n")}\n`; });
+        return out;
+      }
+      // Formato OFSC: el campo de notas junta todo en un solo párrafo, así que
+      // se usan separadores visibles entre secciones (▌) y entre datos ( | ).
+      const plano = l=>l.replace(/^• /,"").replace(/\s*\n\s*/g," ").replace(/▫️\s*/g,"").trim();
+      let t = `🔴 ${tpl.label.toUpperCase()} — CLARO | Fecha Registro: ${meta.fecha}`;
+      secciones.forEach(sc=>{
+        const nombre = sc.title.replace(/^[^\p{L}]+/u,"").replace(/\s*\(.*\)\s*$/,"").toUpperCase();
+        t += `  ▌ ${nombre}: ` + sc.lineas.map(plano).join(" | ");
+      });
+      return t;
     };
   }
 
@@ -686,7 +702,8 @@
         ]},
         grupoContacto(),
         { title:"👤 Supervisor", fields:[
-          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"}
+          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"},
+          {id:"numeroSupervisor", label:"Número supervisor", type:"text"}
         ]}
       ]
     },
@@ -743,7 +760,8 @@
         grupoGestion("N"),
         { title:"🛰️ Datos NOC", fields:[
           {id:"numeroAviso", label:"Número aviso", type:"text"},
-          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"}
+          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"},
+          {id:"numeroSupervisor", label:"Número supervisor", type:"text"}
         ]},
         { title:"🔎 Hallazgo en terreno (según subrazón)", fields:[
           {id:"hallazgoPotenciaN01", label:"Potencia óptica medida (dBm)", type:"text", inputmode:"decimal", condOn:"subrazon", condVal:"N01 - FTTH Sin Potencia Óptica"},
@@ -754,7 +772,6 @@
           {id:"hallazgoRfN08", label:"Nivel de señal RF medido (dB)", type:"text", inputmode:"decimal", condOn:"subrazon", condVal:"N08 - HFC Problema Niveles de Señal RF"}
         ]},
         { title:"🔌 Detalle de puerto (solo si Subrazón = N06 Puerto dañado/copado/no disponible)", fields:[
-          {id:"numeroSupervisorN06", label:"Número supervisor", type:"text", condOn:"subrazon", condVal:"N06 - Puerto dañado/copado/no disponible"},
           {id:"infoSuministradaSupervisor", label:"Información suministrada por supervisor", type:"textarea", condOn:"subrazon", condVal:"N06 - Puerto dañado/copado/no disponible"},
           {id:"nombreCajaAnterior", label:"Nombre de caja anterior", type:"text", condOn:"subrazon", condVal:"N06 - Puerto dañado/copado/no disponible"},
           {id:"nombreCajaPosterior", label:"Nombre de caja posterior", type:"text", condOn:"subrazon", condVal:"N06 - Puerto dañado/copado/no disponible"},
@@ -777,7 +794,8 @@
         grupoTecnico(),
         grupoGestion("M"),
         { title:"👤 Supervisor", fields:[
-          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"}
+          {id:"supervisorAvala", label:"Supervisor que avala", type:"text"},
+          {id:"numeroSupervisor", label:"Número supervisor", type:"text"}
         ]},
         { title:"🔎 Hallazgo en terreno (según subrazón)", fields:[
           {id:"hallazgoOtM01", label:"Número de OT/LLS duplicada encontrada", type:"text", condOn:"subrazon", condVal:"M01 - Múltiples OT/LLS Creadas"},
@@ -797,6 +815,7 @@
         { title:"💻 Sistemas", fields:[
           {id:"dexonReq", label:"Dexon o Req", type:"text"},
           {id:"supervisorAutoriza", label:"Supervisor que autoriza", type:"text"},
+          {id:"numeroSupervisorAutoriza", label:"Número supervisor", type:"text"},
           {id:"sistemaConFalla", label:"Sistema con falla", type:"text"}
         ]},
         grupoContacto()
@@ -1444,6 +1463,7 @@
       <p class="section-label">Vista previa</p>
       <div class="preview-box" id="preview"></div>
       <button class="btn-copy" id="btn-copy"><span id="copy-icon">📋</span><span id="copy-label">Copiar plantilla</span></button>
+      <button type="button" class="btn-ofsc" id="btn-ofsc">🧾 Copiar para notas de OFSC (una línea)</button>
       ${plantillaActual.groups.some(g=>g.fields.some(f=>f.id === "telefonoZO")) ? '<button type="button" class="btn-zo-wa" id="btn-zo-wa">📲 Copiar y enviar al ZO por WhatsApp</button>' : ""}
       <div class="post-copy" id="post-copy" hidden>
         <button type="button" class="btn-nuevo" id="btn-nuevo">➕ Nuevo registro</button>
@@ -1546,7 +1566,8 @@
         });
       }
     }));
-    $("btn-copy").addEventListener("click", onCopiar);
+    $("btn-copy").addEventListener("click", ()=>onCopiar(false));
+    $("btn-ofsc").addEventListener("click", ()=>onCopiar(true));
     if($("btn-zo-wa")) $("btn-zo-wa").addEventListener("click", onEnviarZO);
     initZO();
     (function(){
@@ -1678,7 +1699,8 @@
     }catch(e){ return false; }
   }
 
-  async function onCopiar(){
+  async function onCopiar(ofsc){
+    ofsc = ofsc === true;
     if(evidPendientes()){
       $("copy-label").textContent = "Espera: aún se están subiendo las fotos";
       setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
@@ -1689,7 +1711,8 @@
       setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
       return false;
     }
-    const texto = actualizarPreview();
+    actualizarPreview();
+    const texto = ofsc ? plantillaActual.build(valores, { fecha: fechaRegistroActual(), ofsc:true }) : actualizarPreview();
     const btn = $("btn-copy");
     const ok = await copiarTexto(texto);
     if(ok){
@@ -1700,7 +1723,7 @@
       btn.classList.add("copied");
       $("post-copy").hidden = false;
       $("copy-icon").textContent = "✅";
-      $("copy-label").textContent = "Copiado";
+      $("copy-label").textContent = ofsc ? "Copiado para OFSC" : "Copiado";
       setTimeout(()=>{
         btn.classList.remove("copied");
         $("copy-icon").textContent = "📋";
