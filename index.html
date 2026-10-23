@@ -519,7 +519,7 @@
         {id:"horaGestion", label:"Hora Gestión", type:"text", placeholder:"Ej. 10:30 AM"},
         {id:"ordenTrabajo", label:"Orden de Trabajo", type:"text", inputmode:"numeric", placeholder:"Máx. 9 dígitos (el OT se agrega solo)", ot:true},
         ...(trasOrden||[]),
-        {id:"cuenta", label:"Cuenta", type:"text", inputmode:"numeric", placeholder:"Solo números"},
+        {id:"cuenta", label:"Cuenta", type:"text", inputmode:"numeric", placeholder:"Solo números (máx. 8)", maxDigits:8},
         {id:"aliado", label:"Aliado/Distribuidor", type:"chips", options: ALIADOS, placeholder:"O escribe otro aliado"},
         {id:"coordenadas", label:"Coordenadas", type:"geo"},
         ...(camposExtra||[]),
@@ -718,7 +718,7 @@
         grupoTecnico(),
         grupoGestion("Z", [], [
           {id:"red", label:"Red", type:"select", options:["FTTH","HFC","FWA","DTH"]},
-          {id:"redVisible", label:"¿Qué tipo de red ve con cobertura visualmente?", type:"select", options:["FTTH","HFC","FWA","DTH","No hay red con cobertura visible"], condOn:"red", condAny:true}
+          {id:"redVisible", label:"¿Qué tipo de red ve con cobertura visualmente?", type:"select", options:["FTTH","HFC","No hay red con cobertura FTTH ni HFC"], condOn:"red", condAny:true}
         ]),
         { title:"🗺️ Datos de Red", fields:[
           {id:"supervisorAvala", label:"Supervisor que avala", type:"text"},
@@ -1334,14 +1334,13 @@
       const q = normTxt(nom.value);
       const res = ZO_LISTA.filter(z=>{
         const n = normTxt(z.n);
-        return !q || n.startsWith(q) || n.split(/\s+/).some(w=>w.startsWith(q));
+        return q && (n.startsWith(q) || n.split(/\s+/).some(w=>w.startsWith(q)));
       }).slice(0, 8);
       if(!res.length || (res.length === 1 && normTxt(res[0].n) === q)){ box.hidden = true; return; }
       box.innerHTML = res.map((z,i)=>`<button type="button" data-i="${i}">${z.n}<small>${z.t}</small></button>`).join("");
       box._res = res; box.hidden = false;
     }
     nom.addEventListener("input", ()=>{ sugerir(); aplicar(); });
-    nom.addEventListener("focus", sugerir);
     nom.addEventListener("blur", ()=>setTimeout(()=>{ box.hidden = true; }, 180));
     box.addEventListener("pointerdown", ev=>{
       const b = ev.target.closest("button[data-i]");
@@ -1528,6 +1527,9 @@
         actualizarPreview();
       });
       el.addEventListener("change", actualizarPreview);
+      if(f.maxDigits){
+        el.addEventListener("input", ()=>{ el.value = el.value.replace(/\D/g, "").slice(0, f.maxDigits); });
+      }
       if(f.ot){
         el.addEventListener("input", ()=>{ el.value = el.value.replace(/\D/g, "").slice(0, 9); });
         el.addEventListener("blur", ()=>{
@@ -1547,6 +1549,20 @@
     $("btn-copy").addEventListener("click", onCopiar);
     if($("btn-zo-wa")) $("btn-zo-wa").addEventListener("click", onEnviarZO);
     initZO();
+    (function(){
+      const red = $("c-red"), vis = $("c-redVisible");
+      if(!red || !vis) return;
+      const NO = "No hay red con cobertura FTTH ni HFC";
+      function rebuild(){
+        const prev = vis.value;
+        const opts = ["FTTH","HFC"].filter(o=>o !== red.value).concat([NO]);
+        vis.innerHTML = '<option value="" disabled selected>Selecciona…</option>' + opts.map(o=>`<option value="${o}">${o}</option>`).join("");
+        if(opts.includes(prev)) vis.value = prev;
+        actualizarPreview();
+      }
+      red.addEventListener("change", rebuild);
+      rebuild();
+    })();
     $("btn-nuevo").addEventListener("click", ()=>{
       abrirFormulario(plantillaActual.id);
       const sc = $("screen-form"); if(sc && sc.scrollTo) sc.scrollTo(0,0); window.scrollTo(0,0);
