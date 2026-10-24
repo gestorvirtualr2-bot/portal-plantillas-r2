@@ -301,6 +301,19 @@
   .post-copy button:active{ transform:scale(.97); }
   input.auto-ro{ opacity:.75; pointer-events:none; }
   .btn-copy.copied{ background:var(--ok); }
+  .guia{ background:var(--surface-2); border:1.5px solid var(--border); border-left:4px solid var(--red); border-radius:12px; padding:11px 13px; display:flex; flex-direction:column; gap:5px; font-size:12.5px; color:var(--text); }
+  .guia p{ margin:0; line-height:1.4; }
+  .guia-head{ display:flex; justify-content:space-between; align-items:center; }
+  .guia-head button{ background:var(--red-tint); color:var(--red); border:none; border-radius:14px; padding:5px 11px; font-size:12px; font-weight:700; cursor:pointer; }
+  .guia-falta{ color:var(--red); font-weight:600; } .guia-falta.ok{ color:var(--ok); }
+  .guia-ofsc{ font-weight:700; }
+  .ofsc-aviso{ background:#fff4d6; border:2px solid #e0a100; color:#5b4200; border-radius:12px; padding:11px 13px; font-size:13px; display:flex; flex-direction:column; gap:8px; width:100%; box-sizing:border-box; }
+  .ofsc-aviso.ok{ background:var(--ok-tint); border-color:var(--ok); color:var(--ok); font-weight:700; }
+  .ofsc-aviso button{ background:#e0a100; color:#fff; border:none; border-radius:10px; padding:10px; font-weight:700; font-size:13.5px; cursor:pointer; }
+  .post-copy{ flex-wrap:wrap; }
+  .geo-status.warn{ color:#b26a00; font-style:normal; }
+  .geo-accept{ align-self:flex-start; background:transparent; border:1.5px solid var(--red); color:var(--red); border-radius:10px; padding:7px 11px; font-size:12px; font-weight:700; cursor:pointer; }
+
   .btn-ofsc{ margin-top:8px; padding:12px; border-radius:13px; border:1.5px solid var(--red); background:transparent; color:var(--red); font-weight:700; font-size:13.5px; cursor:pointer; }
   .btn-ofsc:active{ transform:scale(.98); }
 
@@ -1048,6 +1061,7 @@
   renderPanel();
 
   $("btn-back").addEventListener("click", ()=>{
+    if(!puedeSalir()) return;
     screenForm.hidden = true;
     screenPanel.hidden = false;
   });
@@ -1086,7 +1100,8 @@
           <input id="c-${f.id}" type="text" placeholder="Obteniendo ubicación…" autocomplete="off" readonly>
           <button type="button" class="btn-geo" id="geo-${f.id}" aria-label="Actualizar coordenadas">📍</button>
         </div>
-        <span class="geo-status" id="geo-status-${f.id}"></span>`;
+        <span class="geo-status" id="geo-status-${f.id}"></span>
+        <button type="button" class="geo-accept" id="geo-acc-${f.id}" hidden>Usar ubicación aproximada</button>`;
     }else{
       control = `<input id="c-${f.id}" type="${f.type}" inputmode="${f.inputmode||""}" placeholder="${f.placeholder||""}" autocomplete="off">`;
     }
@@ -1099,51 +1114,86 @@
     </div>`;
   }
 
+  const geoEstado = { m:null, aceptada:false };
+  const GEO_OK = 50, GEO_MAX = 200;
+  function msgErrorGeo(err){
+    if(err && err.code === 1) return "Este portal no tiene permiso para leer tu ubicación. Activa el permiso de ubicación del navegador y reintenta con 📍.";
+    if(err && err.code === 2) return "Ubicación no disponible en este momento. Activa el GPS y reintenta con 📍.";
+    if(err && err.code === 3) return "Se agotó el tiempo esperando el GPS. Sal a cielo abierto y reintenta con 📍.";
+    return "No se pudo obtener la ubicación. Reintenta con 📍.";
+  }
   function pedirUbicacion(f){
     const btn = $(`geo-${f.id}`);
     const input = $(`c-${f.id}`);
     const status = $(`geo-status-${f.id}`);
-    const mapsLink = $(`geo-maps-${f.id}`);
+    const acc = $(`geo-acc-${f.id}`);
     if(!btn || !input || !status) return;
+    geoEstado.m = null; geoEstado.aceptada = false;
+    if(acc) acc.hidden = true;
     if(!("geolocation" in navigator)){
       status.textContent = "Este navegador no soporta ubicación automática. Reintenta con 📍.";
       status.className = "geo-status err";
-      mapsLink && mapsLink.classList.add("show");
       return;
     }
     if(location.protocol === "file:"){
       status.textContent = "La ubicación automática solo funciona abriendo el enlace del portal. Reintenta con 📍.";
       status.className = "geo-status err";
-      mapsLink && mapsLink.classList.add("show");
       return;
     }
     btn.classList.add("loading"); btn.disabled = true;
-    status.textContent = "Obteniendo ubicación…";
+    status.textContent = "Buscando la mejor señal de GPS… (hasta 15 s)";
     status.className = "geo-status";
-    navigator.geolocation.getCurrentPosition(
-      (pos)=>{
-        const lat = pos.coords.latitude.toFixed(6);
-        const lon = pos.coords.longitude.toFixed(6);
-        input.value = `${lat}, ${lon}`;
-        status.textContent = `Ubicación capturada (±${Math.round(pos.coords.accuracy)} m)`;
-        status.className = "geo-status ok";
-        btn.classList.remove("loading"); btn.disabled = false;
-        mapsLink && mapsLink.classList.remove("show");
-        $(`field-${f.id}`) && $(`field-${f.id}`).classList.remove("field-error");
-        actualizarPreview();
-      },
-      (err)=>{
-        let msg = "No se pudo obtener la ubicación. Reintenta con 📍.";
-        if(err.code === 1) msg = (location.protocol === "file:" ? "La ubicación automática solo funciona abriendo el enlace del portal." : "Este portal no tiene permiso para leer tu ubicación aquí.") + " Revisa que el GPS y el permiso de ubicación del navegador estén activos y reintenta con 📍.";
-        else if(err.code === 2) msg = "Ubicación no disponible en este momento. Reintenta con 📍.";
-        else if(err.code === 3) msg = "Se agotó el tiempo esperando el GPS. Reintenta con 📍.";
-        status.textContent = msg;
+    let best = null, terminado = false, wid = null, lastErr = null;
+    const timer = setTimeout(cerrar, 15000);
+    function mostrar(pos){
+      input.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+      geoEstado.m = Math.round(pos.coords.accuracy);
+      $(`field-${f.id}`) && $(`field-${f.id}`).classList.remove("field-error");
+      actualizarPreview();
+    }
+    function cerrar(){
+      if(terminado) return;
+      terminado = true;
+      clearTimeout(timer);
+      try{ if(wid !== null && navigator.geolocation.clearWatch) navigator.geolocation.clearWatch(wid); }catch(e){}
+      btn.classList.remove("loading"); btn.disabled = false;
+      if(!best){
+        status.textContent = msgErrorGeo(lastErr);
         status.className = "geo-status err";
-        btn.classList.remove("loading"); btn.disabled = false;
-        mapsLink && mapsLink.classList.add("show");
-      },
-      { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
-    );
+        hablar("No se pudo obtener la ubicación. Sal a un lugar abierto y vuelve a intentarlo.");
+        return;
+      }
+      mostrar(best);
+      const m = geoEstado.m;
+      if(m <= GEO_OK){
+        status.textContent = `✅ Ubicación precisa (±${m} m)`;
+        status.className = "geo-status ok";
+      }else if(m <= GEO_MAX){
+        status.textContent = `⚠️ Ubicación aceptable (±${m} m). Si puedes, sal a cielo abierto y reintenta con 📍.`;
+        status.className = "geo-status warn";
+      }else{
+        status.textContent = `❌ Ubicación poco precisa (±${m} m). Muévete a un lugar abierto, activa el GPS en alta precisión y reintenta con 📍.`;
+        status.className = "geo-status err";
+        if(acc) acc.hidden = false;
+        hablar("La ubicación es poco precisa. Muévete a un lugar abierto y vuelve a intentarlo.");
+      }
+    }
+    const opts = { enableHighAccuracy:true, timeout:15000, maximumAge:0 };
+    if(typeof navigator.geolocation.watchPosition === "function"){
+      wid = navigator.geolocation.watchPosition(
+        (pos)=>{
+          if(!best || pos.coords.accuracy < best.coords.accuracy){
+            best = pos;
+            status.textContent = `Mejorando la señal… (±${Math.round(pos.coords.accuracy)} m)`;
+          }
+          if(pos.coords.accuracy <= 30) cerrar();
+        },
+        (err)=>{ lastErr = err; if(err.code === 1 || best) cerrar(); },
+        opts
+      );
+    }else{
+      navigator.geolocation.getCurrentPosition(pos=>{ best = pos; cerrar(); }, err=>{ lastErr = err; cerrar(); }, opts);
+    }
   }
 
   // ---------- Evidencias ----------
@@ -1380,7 +1430,7 @@
       telSupervisor: pick("numeroSupervisor","numeroSupervisorAutoriza","telefonoSupervisor"),
       zo: v.nombreZO || "", telZO: v.telefonoZO || "",
       ev1: ev[0] || "", ev2: ev[1] || "",
-      otros: otros.join(" | "), texto: String(texto || "").slice(0, 8000)
+      otros: otros.concat([geoEstado.m !== null ? `Precisión GPS: ±${geoEstado.m} m${geoEstado.aceptada ? " (aproximada aceptada)" : ""}` : "", `Pegado en OFSC: ${ofscConfirmado ? "Sí" : "Sin confirmar"}`].filter(Boolean)).join(" | "), texto: String(texto || "").slice(0, 8000)
     };
     const c = leerCola().filter(x=>!(x.id === r.id));
     c.push(r); guardarCola(c);
@@ -1502,14 +1552,95 @@
     });
   })();
 
+  // ---------- Guía del técnico (reglas, sin IA externa; los textos son editables aquí) ----------
+  const GUIA = {
+    CNA:["Confirma que llamaste y tocaste en el sitio sin respuesta del cliente.","Foto de la fachada y captura de las llamadas realizadas."],
+    INC:["Indica qué incumplió el aliado y quién lo avala.","Foto o soporte del incumplimiento."],
+    ENA:["Describe qué equipo del cliente no es apto o no está disponible.","Foto del equipo y de la instalación del cliente."],
+    DIA:["Explica por qué el ducto o la infraestructura del predio no es apta.","Foto del ducto o canalización y de la fachada."],
+    PAD:["Registra quién de la administración negó o restringió el permiso.","Foto de la fachada y soporte del contacto con la administración."],
+    RVT:["Confirma el ZO que avala y qué replanteamiento se requiere.","Foto del punto y de la infraestructura que justifica el replanteo."],
+    DDE:["Compara la dirección de la OT con la real y escribe la correcta.","Foto de la fachada con la nomenclatura visible."],
+    FME:["Lista el material faltante con cantidades.","Foto del material o del punto donde se requiere."],
+    K:["Confirma por qué el cliente recibe pero no puede atender.","Foto de la fachada y evidencia del contacto."],
+    FDZ:["Valida la red más cercana, la distancia y el ZO que avala. La ubicación debe ser precisa.","Foto del entorno sin red y de la red más cercana."],
+    RAN:["Elige la subrazón y completa el hallazgo técnico que se pide.","Foto de la medición, de la CTO o del hallazgo."],
+    MAG:["Explica qué está mal en el agendamiento (OT duplicada, zona, tipo).","Foto de la fachada y soporte de la OT correcta."],
+    PSI:["Indica el sistema con falla y el Dexon o Req que lo reporta.","Captura de pantalla del error."],
+    IAA:["Describe la altura o el riesgo que exige andamio o arnés.","Foto de la fachada y del punto de instalación."],
+    RME:["Explica por qué se requiere Móvil Elite.","Foto del punto y de la dificultad."],
+    CND:["Registra que el cliente no cuenta con el dinero y quién lo informó.","Foto de la fachada y soporte de la conversación."],
+    UPF:["Describe con datos concretos los indicios de posible fraude.","Foto de la fachada, del documento y de lo que respalda el hallazgo."],
+    CSI:["Indica dónde está la cámara y si está soldada o inundada.","Foto de la cámara con su identificación."],
+    GTE:["Identifica al tercero y la gestión que se espera de él.","Foto del punto y soporte del contacto con el tercero."],
+    ACE:["Explica por qué la actividad excede el tiempo estimado.","Foto del avance y del punto de trabajo."],
+    VDA:["Indica el motivo por el que la venta vuelve al asesor.","Soporte del motivo (captura o foto)."],
+    FCS:["Describe el factor climático o de seguridad concreto.","Foto del entorno que lo evidencia."]
+  };
+  const SUBTIPS = {
+    N01:"Mide la potencia en la CTO y en el cliente; foto del medidor con el valor.",
+    N02:"Registra la potencia medida (dBm) y fotografía el medidor.",
+    N03:"Identifica el hilo o par en campo y fotografía la etiqueta.",
+    N05:"Escribe la dirección donde buscaste la CTO y fotografía el recorrido.",
+    N06:"Registra la caja anterior y posterior y fotografía el puerto dañado o copado.",
+    N07:"Registra la CTO física encontrada y fotografía su etiqueta.",
+    N08:"Registra el nivel de señal RF (dB) y fotografía el equipo de medida."
+  };
+  const GUIA_DEF = ["Completa todos los campos con datos reales.","Una foto clara que respalde la razón."];
+  let ofscCopiado = false, ofscConfirmado = false, ultimoRegistro = null;
+  function faltantes(){
+    const out = [];
+    plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
+      const w = $(`field-${f.id}`);
+      if(!w || w.hasAttribute("data-cond-hidden")) return;
+      if(f.type === "evidencias" && !EVID_CONFIGURADO) return;
+      const el = $(`c-${f.id}`);
+      if(el && !el.value.trim()) out.push(f.type === "evidencias" ? "Foto de evidencia" : f.label.replace(/\s*\(.*\)\s*$/,""));
+    }));
+    return out;
+  }
+  function textoGuia(){
+    const g = GUIA[plantillaActual.id] || GUIA_DEF;
+    const falta = faltantes();
+    return `${plantillaActual.label}. Confirma: ${g[0]} Evidencia: ${g[1]} ` +
+      (falta.length ? `Te falta: ${falta.slice(0,5).join(", ")}. ` : "Ya está todo diligenciado. ") +
+      "Recuerda: al final copia y pega la plantilla en OFSC.";
+  }
+  function actualizarGuia(){
+    const box = $("guia");
+    if(!box || !plantillaActual) return;
+    const g = GUIA[plantillaActual.id] || GUIA_DEF;
+    const sub = ($("c-subrazon") || {}).value || "";
+    const cod = sub.split(" - ")[0];
+    const falta = faltantes();
+    box.innerHTML = `
+      <div class="guia-head"><b>🧭 Guía</b><button type="button" id="guia-voz">🔊 Escuchar</button></div>
+      <p><b>Qué validar:</b> ${g[0]}</p>
+      <p><b>Evidencia:</b> ${g[1]}</p>
+      ${sub ? `<p><b>Subrazón ${cod}:</b> ${SUBTIPS[cod] || "La evidencia debe respaldar exactamente este motivo."}</p>` : ""}
+      <p class="guia-falta ${falta.length ? "" : "ok"}">${falta.length ? "Falta: " + falta.slice(0,6).join(", ") + (falta.length > 6 ? ` y ${falta.length - 6} más` : "") : "✅ Todo diligenciado. Copia la plantilla."}</p>
+      <p class="guia-ofsc">📌 Al final, copia y pega esta plantilla en OFSC. Es obligatorio.</p>`;
+  }
+  document.addEventListener("click", ev=>{
+    if(ev.target && ev.target.id === "guia-voz" && plantillaActual) hablar(textoGuia());
+  });
+  function puedeSalir(){
+    if(!ofscCopiado || ofscConfirmado) return true;
+    const ok = confirm("¿Ya pegaste la plantilla en OFSC?\n\nAceptar = sí, continuar.\nCancelar = volver para pegarla.");
+    if(ok){ ofscConfirmado = true; if(ultimoRegistro) registrarGestion(ultimoRegistro.canal, ultimoRegistro.texto); }
+    else hablar("Recuerda pegar la plantilla en OFSC y guardar la actividad.");
+    return ok;
+  }
+
   function abrirFormulario(tplId){
     plantillaActual = TEMPLATES[tplId];
+    geoEstado.m = null; geoEstado.aceptada = false; ofscCopiado = false; ofscConfirmado = false; ultimoRegistro = null;
     registroId = "R" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     valores = {};
     $("form-title").innerHTML = `${plantillaActual.label}<small>Diligencia y copia</small>`;
 
     const body = $("form-body");
-    let html = "";
+    let html = '<div class="guia" id="guia"></div>';
     plantillaActual.groups.forEach(g=>{
       html += `<div class="group"><div class="group-title">${g.title}</div>${g.fields.map(campoHTML).join("")}</div>`;
     });
@@ -1520,6 +1651,7 @@
       <button type="button" class="btn-ofsc" id="btn-ofsc">🧾 Copiar para notas de OFSC (una línea)</button>
       ${plantillaActual.groups.some(g=>g.fields.some(f=>f.id === "telefonoZO")) ? '<button type="button" class="btn-zo-wa" id="btn-zo-wa">📲 Copiar y enviar al ZO por WhatsApp</button>' : ""}
       <div class="post-copy" id="post-copy" hidden>
+        <div class="ofsc-aviso" id="ofsc-aviso"><b>⚠️ ¡Importante!</b> Pega esta plantilla en las notas de OFSC y guarda la actividad.<button type="button" id="btn-ofsc-ok">✅ Ya la pegué en OFSC</button></div>
         <button type="button" class="btn-nuevo" id="btn-nuevo">➕ Nuevo registro</button>
         <button type="button" class="btn-otra" id="btn-otra">📑 Otra plantilla</button>
       </div>`;
@@ -1564,11 +1696,20 @@
       }
     }));
 
+
     // coordenadas: captura automática al abrir, botón solo para reintentar
     plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
       if(f.type === "geo"){
         const btn = $(`geo-${f.id}`);
         btn.addEventListener("click", ()=>pedirUbicacion(f));
+        const accBtn = $(`geo-acc-${f.id}`);
+        if(accBtn) accBtn.addEventListener("click", ()=>{
+          geoEstado.aceptada = true; accBtn.hidden = true;
+          $(`geo-status-${f.id}`).textContent = `⚠️ Ubicación aproximada aceptada (±${geoEstado.m} m)`;
+          $(`geo-status-${f.id}`).className = "geo-status warn";
+          $(`field-${f.id}`) && $(`field-${f.id}`).classList.remove("field-error");
+          actualizarPreview();
+        });
         pedirUbicacion(f);
       }
     }));
@@ -1638,11 +1779,17 @@
       red.addEventListener("change", rebuild);
       rebuild();
     })();
+    $("btn-ofsc-ok").addEventListener("click", ()=>{
+      ofscConfirmado = true;
+      const av = $("ofsc-aviso"); av.classList.add("ok"); av.innerHTML = "✅ Confirmado: la plantilla quedó en OFSC.";
+      if(ultimoRegistro) registrarGestion(ultimoRegistro.canal, ultimoRegistro.texto);
+    });
     $("btn-nuevo").addEventListener("click", ()=>{
+      if(!puedeSalir()) return;
       abrirFormulario(plantillaActual.id);
       const sc = $("screen-form"); if(sc && sc.scrollTo) sc.scrollTo(0,0); window.scrollTo(0,0);
     });
-    $("btn-otra").addEventListener("click", ()=>{ screenForm.hidden = true; screenPanel.hidden = false; window.scrollTo(0,0); });
+    $("btn-otra").addEventListener("click", ()=>{ if(!puedeSalir()) return; screenForm.hidden = true; screenPanel.hidden = false; window.scrollTo(0,0); });
     // fecha y hora de gestión: automáticas, no editables
     ["fechaGestion","horaGestion"].forEach(id=>{ const el = $(`c-${id}`); if(el){ el.readOnly = true; el.classList.add("auto-ro"); } });
 
@@ -1650,7 +1797,7 @@
 
     screenPanel.hidden = true;
     screenForm.hidden = false;
-    hablar(plantillaActual.voiceLabel + ".");
+    { const gg = GUIA[plantillaActual.id] || GUIA_DEF; hablar(plantillaActual.voiceLabel + ". " + gg[0] + " Recuerda: al final copia y pega la plantilla en OFSC."); }
   }
 
   function recolectarValores(){
@@ -1707,6 +1854,7 @@
     const meta = { fecha: fechaRegistroActual() };
     const texto = plantillaActual.build(valores, meta);
     $("preview").textContent = texto;
+    actualizarGuia();
     return texto;
   }
 
@@ -1723,7 +1871,10 @@
       if(f.type === "evidencias" && !EVID_CONFIGURADO) return;
       const el = $(`c-${f.id}`);
       const val = el ? el.value.trim() : "";
-      if(!val){
+      const geoMala = f.type === "geo" && val && geoEstado.m !== null && geoEstado.m > GEO_MAX && !geoEstado.aceptada;
+      const msgEl = wrapper.querySelector(".field-msg");
+      if(msgEl) msgEl.textContent = geoMala ? "Ubicación poco precisa: mejórala con 📍 o pulsa «Usar ubicación aproximada»." : "Este campo es obligatorio.";
+      if(!val || geoMala){
         valido = false;
         wrapper.classList.add("field-error");
         if(!primerInvalido) primerInvalido = wrapper;
@@ -1757,11 +1908,14 @@
     ofsc = ofsc === true;
     if(evidPendientes()){
       $("copy-label").textContent = "Espera: aún se están subiendo las fotos";
+      hablar("Espera, aún se están subiendo las fotos.");
       setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
       return false;
     }
     if(!validarCampos()){
       $("copy-label").textContent = "Completa los campos resaltados en rojo";
+      { const fl = faltantes();
+        hablar(fl.length ? `Te falta: ${fl.slice(0,5).join(", ")}.` : "Revisa los campos resaltados en rojo, la ubicación no es suficientemente precisa."); }
       setTimeout(()=>{ $("copy-label").textContent = "Copiar plantilla"; }, 2600);
       return false;
     }
@@ -1783,7 +1937,11 @@
         $("copy-icon").textContent = "📋";
         $("copy-label").textContent = "Copiar plantilla";
       }, 1800);
-      registrarGestion(ofsc ? "Copiado para OFSC" : "Copiado WhatsApp", texto);
+      ofscCopiado = true; ofscConfirmado = false;
+      ultimoRegistro = { canal: ofsc ? "Copiado para OFSC" : "Copiado WhatsApp", texto };
+      const av = $("ofsc-aviso"); if(av){ av.classList.remove("ok"); const bo = $("btn-ofsc-ok"); if(bo) bo.hidden = false; }
+      hablar("Plantilla copiada. Ahora pégala en OFSC y guarda la actividad.");
+      registrarGestion(ultimoRegistro.canal, texto);
       return true;
     }else{
       $("copy-label").textContent = "No se pudo copiar, mantén presionado el texto";
