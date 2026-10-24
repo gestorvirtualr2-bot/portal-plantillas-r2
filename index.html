@@ -1336,6 +1336,58 @@
   }
   cargarZO();
 
+  // ---------- Registro de gestiones en Google Sheets (con cola si no hay señal) ----------
+  let registroId = "";
+  const COLA_KEY = "r2plantillas_cola";
+  const leerCola = ()=>{ try{ return JSON.parse(localStorage.getItem(COLA_KEY) || "[]"); }catch(e){ return []; } };
+  const guardarCola = c=>{ try{ localStorage.setItem(COLA_KEY, JSON.stringify(c.slice(-200))); }catch(e){} };
+  let vaciandoCola = false;
+  async function vaciarCola(){
+    if(vaciandoCola || !EVID_CONFIGURADO) return;
+    vaciandoCola = true;
+    try{
+      let c = leerCola();
+      while(c.length){
+        const j = await zoApi("registrar", { registro:c[0] });
+        if(!j.ok) break;
+        c = leerCola().filter(x=>!(x.id === c[0].id && x.canal === c[0].canal && x.ts === c[0].ts));
+        guardarCola(c);
+        c = leerCola();
+      }
+    }catch(e){ /* se reintenta luego */ }
+    finally{ vaciandoCola = false; }
+  }
+  function registrarGestion(canal, texto){
+    if(!EVID_CONFIGURADO || !plantillaActual) return;
+    const v = valores || {};
+    const pick = (...ids)=>{ for(const id of ids){ if(v[id]) return v[id]; } return ""; };
+    const usados = new Set(["tecnico","telefonoTecnico","fechaGestion","horaGestion","ordenTrabajo","cuenta","aliado","coordenadas","subrazon","supervisorAvala","supervisorAutoriza","nombreSupervisor","numeroSupervisor","numeroSupervisorAutoriza","telefonoSupervisor","nombreZO","telefonoZO","evidencias"]);
+    const otros = [];
+    plantillaActual.groups.forEach(g=>g.fields.forEach(f=>{
+      if(usados.has(f.id) || f.type === "evidencias") return;
+      if(v[f.id]) otros.push(`${f.label}: ${v[f.id]}`);
+    }));
+    const ev = (v.evidencias || "").split("\n").filter(Boolean).map(l=>{ const k = l.indexOf(": "); return k > 0 ? l.slice(k + 2) : l; });
+    const mp = enlaceMapas(v.coordenadas);
+    const r = {
+      id: registroId, ts: fechaRegistroActual(), canal,
+      plantilla: plantillaActual.id, razon: plantillaActual.label,
+      subrazon: v.subrazon || "", tecnico: v.tecnico || "", telTecnico: v.telefonoTecnico || "",
+      fechaGestion: v.fechaGestion || "", horaGestion: v.horaGestion || "",
+      ot: v.ordenTrabajo || "", cuenta: v.cuenta || "", aliado: v.aliado || "",
+      coordenadas: v.coordenadas || "", mapa: mp ? (cortos[mp] || mp) : "",
+      supervisor: pick("supervisorAvala","supervisorAutoriza","nombreSupervisor"),
+      telSupervisor: pick("numeroSupervisor","numeroSupervisorAutoriza","telefonoSupervisor"),
+      zo: v.nombreZO || "", telZO: v.telefonoZO || "",
+      ev1: ev[0] || "", ev2: ev[1] || "",
+      otros: otros.join(" | "), texto: String(texto || "").slice(0, 8000)
+    };
+    const c = leerCola().filter(x=>!(x.id === r.id));
+    c.push(r); guardarCola(c);
+    vaciarCola();
+  }
+  vaciarCola();
+
   function initZO(){
     const nom = $("c-nombreZO"), tel = $("c-telefonoZO");
     if(!nom || !tel) return;
@@ -1380,6 +1432,7 @@
     }
     const ok = await onCopiar();
     if(!ok) return;
+    registrarGestion("Enviado al ZO por WhatsApp", actualizarPreview());
     const url = "https://wa.me/" + tel + "?text=" + encodeURIComponent(actualizarPreview());
     const w = window.open(url, "_blank");
     if(!w) location.href = url;
@@ -1451,6 +1504,7 @@
 
   function abrirFormulario(tplId){
     plantillaActual = TEMPLATES[tplId];
+    registroId = "R" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     valores = {};
     $("form-title").innerHTML = `${plantillaActual.label}<small>Diligencia y copia</small>`;
 
@@ -1729,6 +1783,7 @@
         $("copy-icon").textContent = "📋";
         $("copy-label").textContent = "Copiar plantilla";
       }, 1800);
+      registrarGestion(ofsc ? "Copiado para OFSC" : "Copiado WhatsApp", texto);
       return true;
     }else{
       $("copy-label").textContent = "No se pudo copiar, mantén presionado el texto";
